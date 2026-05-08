@@ -16,6 +16,9 @@ export interface ProviderAPI {
   delete(id: string): Promise<{ success: boolean }>
   toggleActive(id: string): Promise<{ success: boolean }>
   testConnection(id: string): Promise<{ success: boolean; message: string }>
+  configureClaudeGlobal(id: string): Promise<{ success: boolean; message: string; output: string }>
+  configureCodexGlobal(id: string): Promise<{ success: boolean; message: string; output: string }>
+  restoreNativeGlobal(agentId: string): Promise<{ success: boolean; message: string; output: string }>
 }
 
 export interface Provider {

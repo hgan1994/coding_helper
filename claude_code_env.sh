@@ -12,7 +12,9 @@ NVM_VERSION="v0.40.3"
 CLAUDE_PACKAGE="@anthropic-ai/claude-code"
 CONFIG_DIR="$HOME/.claude"
 CONFIG_FILE="$CONFIG_DIR/settings.json"
-API_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+DEFAULT_API_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+API_BASE_URL="${CLAUDE_BASE_URL:-$DEFAULT_API_BASE_URL}"
+MODEL_ID="${CLAUDE_MODEL_ID:-}"
 API_KEY_URL="https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys"
 API_TIMEOUT_MS=3000000
 
@@ -141,9 +143,13 @@ configure_claude_json(){
 
 configure_claude() {
     log_info "Configuring Claude Code..."
-    echo "   You can get your API key from: $API_KEY_URL"
-    read -s -p "🔑 Please enter your ZHIPU API key: " api_key
-    echo
+    local api_key="${CLAUDE_API_KEY:-}"
+
+    if [ -z "$api_key" ]; then
+        echo "   You can get your API key from: $API_KEY_URL"
+        read -s -p "🔑 Please enter your ZHIPU API key: " api_key
+        echo
+    fi
 
     if [ -z "$api_key" ]; then
         log_error "API key cannot be empty. Please run the script again."
@@ -153,6 +159,10 @@ configure_claude() {
     ensure_dir_exists "$CONFIG_DIR"
 
     # 写入配置文件
+    CLAUDE_CONFIG_API_KEY="$api_key" \
+    CLAUDE_CONFIG_BASE_URL="$API_BASE_URL" \
+    CLAUDE_CONFIG_MODEL_ID="$MODEL_ID" \
+    CLAUDE_CONFIG_TIMEOUT_MS="$API_TIMEOUT_MS" \
     node --eval '
         const os = require("os");
         const fs = require("fs");
@@ -160,20 +170,29 @@ configure_claude() {
 
         const homeDir = os.homedir();
         const filePath = path.join(homeDir, ".claude", "settings.json");
-        const apiKey = "'"$api_key"'";
+        const apiKey = process.env.CLAUDE_CONFIG_API_KEY;
+        const baseUrl = process.env.CLAUDE_CONFIG_BASE_URL;
+        const modelId = process.env.CLAUDE_CONFIG_MODEL_ID;
+        const timeoutMs = process.env.CLAUDE_CONFIG_TIMEOUT_MS;
 
         const content = fs.existsSync(filePath)
             ? JSON.parse(fs.readFileSync(filePath, "utf-8"))
             : {};
+        const env = {
+            ...(content.env || {}),
+            ANTHROPIC_AUTH_TOKEN: apiKey,
+            ANTHROPIC_BASE_URL: baseUrl,
+            API_TIMEOUT_MS: timeoutMs,
+            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1
+        };
+
+        if (modelId) {
+            env.ANTHROPIC_MODEL = modelId;
+        }
 
         fs.writeFileSync(filePath, JSON.stringify({
             ...content,
-            env: {
-                ANTHROPIC_AUTH_TOKEN: apiKey,
-                ANTHROPIC_BASE_URL: "'"$API_BASE_URL"'",
-                API_TIMEOUT_MS: "'"$API_TIMEOUT_MS"'",
-                CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1
-            }
+            env
         }, null, 2), "utf-8");
     ' || {
         log_error "Failed to write settings.json"

@@ -23,7 +23,10 @@ const api = {
     }) => ipcRenderer.invoke('provider:update', input),
     delete: (id: string) => ipcRenderer.invoke('provider:delete', id),
     toggleActive: (id: string) => ipcRenderer.invoke('provider:toggleActive', id),
-    testConnection: (id: string) => ipcRenderer.invoke('provider:testConnection', id)
+    testConnection: (id: string) => ipcRenderer.invoke('provider:testConnection', id),
+    configureClaudeGlobal: (id: string) => ipcRenderer.invoke('provider:configureClaudeGlobal', id),
+    configureCodexGlobal: (id: string) => ipcRenderer.invoke('provider:configureCodexGlobal', id),
+    restoreNativeGlobal: (agentId: string) => ipcRenderer.invoke('provider:restoreNativeGlobal', agentId)
   }
 }
 

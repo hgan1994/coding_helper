@@ -63,6 +63,27 @@
   display: block;
 }
 
+.agent-card-status {
+  font-size: 12px;
+  margin-top: 8px;
+  display: block;
+  max-width: 420px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.agent-card-status-info {
+  color: var(--accent);
+}
+
+.agent-card-status-success {
+  color: #16a34a;
+}
+
+.agent-card-status-error {
+  color: #dc2626;
+}
+
 .agent-card-right {
   display: flex;
   align-items: center;
@@ -107,4 +128,9 @@
   border-color: var(--border-hover);
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+
+.btn-outline:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }

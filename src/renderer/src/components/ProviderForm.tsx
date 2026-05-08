@@ -80,7 +80,7 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{isEditing ? '编辑供应商' : '添加供应商'}</h2>

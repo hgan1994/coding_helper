@@ -2,34 +2,106 @@ import { useState } from 'react'
 import { useProviders } from '../hooks/useProviders'
 import './AgentList.css'
 
-interface Agent {
+const NATIVE_PROVIDER_ID = '__native__'
+
+interface AgentConfig {
   id: string
   name: string
   description: string
+  providerType: 'anthropic' | 'openai'
+}
+
+const AGENT_CONFIGS: AgentConfig[] = [
+  { id: 'claude', name: 'Claude', description: 'Anthropic Claude 智能助手', providerType: 'anthropic' },
+  { id: 'codex', name: 'Codex', description: 'OpenAI Codex 编程助手', providerType: 'openai' }
+]
+
+interface Agent extends AgentConfig {
   provider_id: string
 }
 
-const DEFAULT_AGENTS: Agent[] = [
-  {
-    id: 'claude',
-    name: 'Claude',
-    description: 'Anthropic Claude 智能助手',
-    provider_id: ''
-  },
-  {
-    id: 'codex',
-    name: 'Codex',
-    description: 'OpenAI Codex 编程助手',
-    provider_id: ''
-  }
-]
+const DEFAULT_AGENTS: Agent[] = AGENT_CONFIGS.map((config) => ({ ...config, provider_id: NATIVE_PROVIDER_ID }))
 
 export function AgentList(): JSX.Element {
   const { providers } = useProviders()
   const [agents, setAgents] = useState<Agent[]>(DEFAULT_AGENTS)
+  const [configuringAgentId, setConfiguringAgentId] = useState<string | null>(null)
+  const [statusByAgentId, setStatusByAgentId] = useState<Record<string, string>>({})
+  const [statusTypeByAgentId, setStatusTypeByAgentId] = useState<Record<string, 'success' | 'info' | 'error'>>({})
 
   const updateAgent = (id: string, field: string, value: string): void => {
-    setAgents(agents.map((a) => (a.id === id ? { ...a, [field]: value } : a)))
+    setAgents((currentAgents) => currentAgents.map((a) => (a.id === id ? { ...a, [field]: value } : a)))
+    setStatusByAgentId((currentStatus) => ({ ...currentStatus, [id]: '' }))
+    setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [id]: 'info' }))
+  }
+
+  const configureGlobal = async (agent: Agent): Promise<void> => {
+    const isNativeProvider = agent.provider_id === NATIVE_PROVIDER_ID
+    const provider = isNativeProvider ? null : providers.find((p) => p.id === agent.provider_id)
+    const agentDisplayName = agent.id === 'claude' ? 'Claude Code' : agent.name
+    const actionText = isNativeProvider ? '恢复原生全局配置' : '写入全局配置'
+
+    if (!isNativeProvider && !provider) {
+      setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: '请先选择供应商' }))
+      setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'error' }))
+      return
+    }
+
+    if (!isNativeProvider && agent.id === 'claude' && !provider?.model_id) {
+      setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: '供应商缺少模型 ID' }))
+      setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'error' }))
+      return
+    }
+
+    if (!isNativeProvider && agent.id === 'codex' && (!provider?.model_id || !provider.base_url)) {
+      const message = !provider?.model_id ? '供应商缺少模型 ID' : '供应商缺少 Base URL'
+      setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: message }))
+      setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'error' }))
+      return
+    }
+
+    const confirmed = window.confirm(
+      isNativeProvider
+        ? `确认将 ${agentDisplayName} 恢复为原生全局配置？`
+        : `确认将 ${agentDisplayName} 全局配置切换到「${provider?.name}」的「${provider?.model_id}」模型？`
+    )
+    if (!confirmed) return
+
+    setConfiguringAgentId(agent.id)
+    setStatusByAgentId((currentStatus) => ({
+      ...currentStatus,
+      [agent.id]: `正在${actionText}...`
+    }))
+    setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'info' }))
+
+    try {
+      if (isNativeProvider) {
+        await window.api.provider.restoreNativeGlobal(agent.id)
+        setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: `${agentDisplayName} 已恢复原生全局配置` }))
+        window.alert(`已恢复原生配置，请退出已经打开的 ${agentDisplayName} 窗口，重新打开后生效。`)
+      } else if (agent.id === 'claude' && provider) {
+        if (!provider.model_id) {
+          throw new Error('供应商缺少模型 ID')
+        }
+
+        await window.api.provider.configureClaudeGlobal(provider.id)
+        setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'Claude Code 全局配置已更新' }))
+        window.alert('配置成功，请退出已经打开的 Claude Code 窗口，重新打开后生效。')
+      } else if (agent.id === 'codex' && provider) {
+        await window.api.provider.configureCodexGlobal(provider.id)
+        setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'Codex 全局配置已更新' }))
+        window.alert('配置成功，请退出已经打开的 Codex 窗口，重新打开后生效。')
+      } else {
+        throw new Error('暂未支持该 Agent 的自定义供应商全局配置')
+      }
+      setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'success' }))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '全局配置失败'
+      setStatusByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: message }))
+      setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [agent.id]: 'error' }))
+    } finally {
+      setConfiguringAgentId(null)
+    }
   }
 
   return (
@@ -42,33 +114,61 @@ export function AgentList(): JSX.Element {
       </div>
 
       <div className="agent-grid">
-        {agents.map((agent) => (
-          <div key={agent.id} className="agent-card">
-            <div className="agent-card-left">
-              <h3 className="agent-card-name">{agent.name}</h3>
-              <span className="agent-card-desc">{agent.description}</span>
-            </div>
-            <div className="agent-card-right">
-              <select
-                value={agent.provider_id}
-                onChange={(e) => updateAgent(agent.id, 'provider_id', e.target.value)}
-              >
-                <option value="">供应商</option>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
+        {agents.map((agent) => {
+          const isConfiguring = configuringAgentId === agent.id
+          const isNativeProvider = agent.provider_id === NATIVE_PROVIDER_ID
+          const selectedProvider = providers.find((p) => p.id === agent.provider_id)
+          const canConfigureGlobal =
+            !isConfiguring && (isNativeProvider || ((agent.id === 'claude' || agent.id === 'codex') && !!selectedProvider))
+
+          return (
+            <div key={agent.id} className="agent-card">
+              <div className="agent-card-left">
+                <h3 className="agent-card-name">{agent.name}</h3>
+                <span className="agent-card-desc">{agent.description}</span>
+                {statusByAgentId[agent.id] && (
+                  <span className={`agent-card-status agent-card-status-${statusTypeByAgentId[agent.id] ?? 'info'}`}>
+                    {statusByAgentId[agent.id]}
+                  </span>
+                )}
+              </div>
+              <div className="agent-card-right">
+                <select
+                  value={agent.provider_id}
+                  onChange={(e) => updateAgent(agent.id, 'provider_id', e.target.value)}
+                >
+                  <option value="" disabled>
+                    供应商
                   </option>
-                ))}
-              </select>
-              <button className="btn-outline" onClick={() => { /* TODO */ }}>
-                局部窗口
-              </button>
-              <button className="btn-outline" onClick={() => { /* TODO */ }}>
-                全局配置
-              </button>
+                  <option value={NATIVE_PROVIDER_ID}>原生</option>
+                  {providers
+                    .filter((p) => p.type === agent.providerType)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  className="btn-outline"
+                  disabled={!canConfigureGlobal}
+                  title={
+                    isNativeProvider
+                      ? '恢复原生全局配置'
+                      : agent.id === 'claude'
+                        ? '使用选中供应商写入 Claude Code 全局配置'
+                        : agent.id === 'codex'
+                          ? '使用选中供应商写入 Codex 全局配置'
+                          : '暂未支持该 Agent 的自定义供应商全局配置'
+                  }
+                  onClick={() => configureGlobal(agent)}
+                >
+                  {isConfiguring ? '配置中...' : '全局配置'}
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

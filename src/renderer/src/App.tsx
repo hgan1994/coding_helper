@@ -27,8 +27,12 @@ function App(): JSX.Element {
         </nav>
       </header>
       <main className="app-main">
-        {currentPage === 'providers' && <ProviderList />}
-        {currentPage === 'agents' && <AgentList />}
+        <div className={currentPage === 'providers' ? '' : 'page-hidden'}>
+          <ProviderList />
+        </div>
+        <div className={currentPage === 'agents' ? '' : 'page-hidden'}>
+          <AgentList />
+        </div>
       </main>
     </div>
   )
