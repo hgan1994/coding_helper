@@ -125,6 +125,9 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
                 placeholder={getProviderDefaultBaseUrl(type) || 'https://api.example.com/v1'}
                 required
               />
+              {type === 'openai' && (
+                <p className="form-hint">Codex 仅支持 Responses API，不再支持 Chat Completions。</p>
+              )}
             </div>
 
             <div className="form-group">

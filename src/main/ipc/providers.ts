@@ -44,6 +44,7 @@ interface GlobalConfigurationResult {
 const CODEX_PROVIDER_ID_PREFIX = 'coding_helper_'
 const CODEX_MANAGED_BLOCK_START = '# coding-helper codex provider:start'
 const CODEX_MANAGED_BLOCK_END = '# coding-helper codex provider:end'
+const CODEX_CHAT_ONLY_HOSTS = ['api.moonshot.cn', 'api.moonshot.ai']
 
 function getClaudeCodeEnvScriptPath(): string {
   const candidates = [
@@ -168,6 +169,21 @@ function configureCodexGlobal(provider: Provider): GlobalConfigurationResult {
 
   if (!provider.model_id) {
     throw new Error('Provider model ID is required')
+  }
+
+  let normalizedBaseUrl: URL
+  try {
+    normalizedBaseUrl = new URL(provider.base_url)
+  } catch {
+    throw new Error('Provider base URL is invalid')
+  }
+
+  if (normalizedBaseUrl.pathname.includes('/chat/completions')) {
+    throw new Error('Codex 不支持 Chat Completions 地址，只支持 Responses API。请填写兼容 Responses API 的 Base URL，例如 https://api.openai.com/v1')
+  }
+
+  if (CODEX_CHAT_ONLY_HOSTS.includes(normalizedBaseUrl.host)) {
+    throw new Error('Codex 不再提供 chat 转 response 中转，只支持 Responses API。Kimi/Moonshot 当前是 Chat Completions 接口，无法用于 Codex 全局配置')
   }
 
   const codexConfigDir = join(homedir(), '.codex')
