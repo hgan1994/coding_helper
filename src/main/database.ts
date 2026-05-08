@@ -19,6 +19,7 @@ export function initDatabase(): void {
       api_key TEXT NOT NULL DEFAULT '',
       base_url TEXT NOT NULL DEFAULT '',
       model_id TEXT NOT NULL DEFAULT '',
+      chat_to_responses INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -30,6 +31,10 @@ export function initDatabase(): void {
   const hasModels = columns.some((col) => col.name === 'models')
   if (!hasModelId && hasModels) {
     db.exec(`ALTER TABLE providers ADD COLUMN model_id TEXT NOT NULL DEFAULT ''`)
+  }
+  const hasChatToResponses = columns.some((col) => col.name === 'chat_to_responses')
+  if (!hasChatToResponses) {
+    db.exec(`ALTER TABLE providers ADD COLUMN chat_to_responses INTEGER NOT NULL DEFAULT 0`)
   }
 
   console.log('Database initialized at:', dbPath)

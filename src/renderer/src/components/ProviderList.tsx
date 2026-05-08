@@ -9,7 +9,14 @@ export function ProviderList(): JSX.Element {
   const [showForm, setShowForm] = useState(false)
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
 
-  const handleCopy = async (provider: { name: string; type: string; api_key: string; base_url: string; model_id: string }): Promise<void> => {
+  const handleCopy = async (provider: {
+    name: string
+    type: string
+    api_key: string
+    base_url: string
+    model_id: string
+    chat_to_responses: number
+  }): Promise<void> => {
     const confirmed = window.confirm(`确认复制一份「${provider.name}」的配置？`)
     if (!confirmed) return
     await createProvider({
@@ -17,7 +24,8 @@ export function ProviderList(): JSX.Element {
       type: provider.type,
       api_key: provider.api_key,
       base_url: provider.base_url,
-      model_id: provider.model_id
+      model_id: provider.model_id,
+      chat_to_responses: provider.chat_to_responses !== 0
     })
   }
 

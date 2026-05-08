@@ -5,6 +5,7 @@ export interface Provider {
   api_key: string
   base_url: string
   model_id: string
+  chat_to_responses: number
   is_active: number
   created_at: string
   updated_at: string
@@ -16,6 +17,7 @@ export interface CreateProviderInput {
   api_key: string
   base_url: string
   model_id: string
+  chat_to_responses?: boolean
 }
 
 export interface UpdateProviderInput {
@@ -25,6 +27,7 @@ export interface UpdateProviderInput {
   api_key?: string
   base_url?: string
   model_id?: string
+  chat_to_responses?: boolean
   is_active?: boolean
 }
 

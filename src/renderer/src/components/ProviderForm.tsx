@@ -12,6 +12,7 @@ interface ProviderFormProps {
     api_key: string
     base_url: string
     model_id: string
+    chat_to_responses?: boolean
   }) => Promise<void>
   updateProvider: (input: {
     id: string
@@ -20,6 +21,7 @@ interface ProviderFormProps {
     api_key?: string
     base_url?: string
     model_id?: string
+    chat_to_responses?: boolean
   }) => Promise<void>
 }
 
@@ -29,6 +31,7 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [modelId, setModelId] = useState('')
+  const [chatToResponses, setChatToResponses] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const isEditing = !!providerId
@@ -42,6 +45,7 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
           setApiKey(provider.api_key)
           setBaseUrl(provider.base_url)
           setModelId(provider.model_id || '')
+          setChatToResponses(provider.chat_to_responses !== 0)
         }
       })
     }
@@ -66,10 +70,18 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
           type,
           api_key: apiKey,
           base_url: baseUrl,
-          model_id: modelId
+          model_id: modelId,
+          chat_to_responses: type === 'openai' ? chatToResponses : false
         })
       } else {
-        await createProvider({ name, type, api_key: apiKey, base_url: baseUrl, model_id: modelId })
+        await createProvider({
+          name,
+          type,
+          api_key: apiKey,
+          base_url: baseUrl,
+          model_id: modelId,
+          chat_to_responses: type === 'openai' ? chatToResponses : false
+        })
       }
       onClose()
     } catch (err) {
@@ -126,7 +138,7 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
                 required
               />
               {type === 'openai' && (
-                <p className="form-hint">Codex 仅支持 Responses API，不再支持 Chat Completions。</p>
+                <p className="form-hint">Codex 原生只支持 Responses API；如果供应商只有 Chat Completions，请开启下方中转。</p>
               )}
             </div>
 
@@ -151,6 +163,17 @@ export function ProviderForm({ providerId, onClose, createProvider, updateProvid
                 required
               />
             </div>
+
+            {type === 'openai' && (
+              <label className="form-checkbox">
+                <input
+                  type="checkbox"
+                  checked={chatToResponses}
+                  onChange={(e) => setChatToResponses(e.target.checked)}
+                />
+                <span>chat 转 response（用于 Kimi/Moonshot 等 Chat Completions 供应商）</span>
+              </label>
+            )}
           </div>
 
           <div className="form-footer">

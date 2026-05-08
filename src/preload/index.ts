@@ -11,6 +11,7 @@ const api = {
       api_key: string
       base_url: string
       model_id: string
+      chat_to_responses?: boolean
     }) => ipcRenderer.invoke('provider:create', input),
     update: (input: {
       id: string
@@ -19,6 +20,7 @@ const api = {
       api_key?: string
       base_url?: string
       model_id?: string
+      chat_to_responses?: boolean
       is_active?: boolean
     }) => ipcRenderer.invoke('provider:update', input),
     delete: (id: string) => ipcRenderer.invoke('provider:delete', id),

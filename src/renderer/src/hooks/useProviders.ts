@@ -30,6 +30,7 @@ export function useProviders() {
       api_key: string
       base_url: string
       model_id: string
+      chat_to_responses?: boolean
     }) => {
       await window.api.provider.create(input)
       await fetchProviders()
@@ -45,6 +46,7 @@ export function useProviders() {
       api_key?: string
       base_url?: string
       model_id?: string
+      chat_to_responses?: boolean
       is_active?: boolean
     }) => {
       await window.api.provider.update(input)

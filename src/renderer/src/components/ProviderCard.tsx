@@ -41,6 +41,9 @@ export function ProviderCard({ provider, onEdit, onDelete, onCopy }: ProviderCar
             <h3 className="provider-card-name">{provider.name}</h3>
           </div>
           <span className="provider-card-type">{typeLabel}</span>
+          {provider.type === 'openai' && provider.chat_to_responses !== 0 && (
+            <span className="provider-card-type">chat 转 response</span>
+          )}
         </div>
         <div className="provider-card-actions">
           <button className="btn-icon" title="编辑" onClick={onEdit}>

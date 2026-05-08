@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './database'
 import { registerProviderIPC } from './ipc/providers'
+import { startCodexProxyServer } from './codexProxy'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -40,6 +41,7 @@ app.whenReady().then(() => {
   })
 
   initDatabase()
+  startCodexProxyServer()
   registerProviderIPC()
 
   createWindow()

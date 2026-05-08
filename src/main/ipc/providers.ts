@@ -3,6 +3,7 @@ import { app, ipcMain } from 'electron'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { CODEX_PROXY_BASE_URL } from '../codexProxy'
 import { getDatabase } from '../database'
 
 export interface Provider {
@@ -12,6 +13,7 @@ export interface Provider {
   api_key: string
   base_url: string
   model_id: string
+  chat_to_responses: number
   is_active: number
   created_at: string
   updated_at: string
@@ -23,6 +25,7 @@ export interface CreateProviderInput {
   api_key: string
   base_url: string
   model_id: string
+  chat_to_responses?: boolean
 }
 
 export interface UpdateProviderInput {
@@ -32,6 +35,7 @@ export interface UpdateProviderInput {
   api_key?: string
   base_url?: string
   model_id?: string
+  chat_to_responses?: boolean
   is_active?: boolean
 }
 
@@ -178,12 +182,12 @@ function configureCodexGlobal(provider: Provider): GlobalConfigurationResult {
     throw new Error('Provider base URL is invalid')
   }
 
-  if (normalizedBaseUrl.pathname.includes('/chat/completions')) {
-    throw new Error('Codex 不支持 Chat Completions 地址，只支持 Responses API。请填写兼容 Responses API 的 Base URL，例如 https://api.openai.com/v1')
+  if (!provider.chat_to_responses && normalizedBaseUrl.pathname.includes('/chat/completions')) {
+    throw new Error('Codex 直连不支持 Chat Completions 地址。请开启 chat 转 response，或填写兼容 Responses API 的 Base URL')
   }
 
-  if (CODEX_CHAT_ONLY_HOSTS.includes(normalizedBaseUrl.host)) {
-    throw new Error('Codex 不再提供 chat 转 response 中转，只支持 Responses API。Kimi/Moonshot 当前是 Chat Completions 接口，无法用于 Codex 全局配置')
+  if (!provider.chat_to_responses && CODEX_CHAT_ONLY_HOSTS.includes(normalizedBaseUrl.host)) {
+    throw new Error('Kimi/Moonshot 当前是 Chat Completions 接口。请开启 chat 转 response 后再写入 Codex 全局配置')
   }
 
   const codexConfigDir = join(homedir(), '.codex')
@@ -202,11 +206,14 @@ function configureCodexGlobal(provider: Provider): GlobalConfigurationResult {
   const existingConfig = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : ''
   const unmanagedConfig = removeTopLevelTomlKeys(removeCodexManagedBlock(existingConfig), ['model', 'model_provider'])
   const tokenCommand = `cat ${shellSingleQuote(tokenPath)}`
+  const codexBaseUrl = provider.chat_to_responses
+    ? `${CODEX_PROXY_BASE_URL}/codex/${provider.id}/v1`
+    : provider.base_url
   const managedBlock = [
     CODEX_MANAGED_BLOCK_START,
     `[model_providers.${providerId}]`,
     `name = "${escapeTomlString(provider.name)}"`,
-    `base_url = "${escapeTomlString(provider.base_url)}"`,
+    `base_url = "${escapeTomlString(codexBaseUrl)}"`,
     'wire_api = "responses"',
     '',
     `[model_providers.${providerId}.auth]`,
@@ -297,9 +304,9 @@ export function registerProviderIPC(): void {
     const db = getDatabase()
     const id = crypto.randomUUID()
     db.prepare(
-      `INSERT INTO providers (id, name, type, api_key, base_url, model_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(id, input.name, input.type, input.api_key, input.base_url, input.model_id)
+      `INSERT INTO providers (id, name, type, api_key, base_url, model_id, chat_to_responses)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.name, input.type, input.api_key, input.base_url, input.model_id, input.chat_to_responses ? 1 : 0)
     return { id, ...input }
   })
 
@@ -313,12 +320,14 @@ export function registerProviderIPC(): void {
     const apiKey = input.api_key ?? existing.api_key
     const baseUrl = input.base_url ?? existing.base_url
     const modelId = input.model_id ?? existing.model_id
+    const chatToResponses =
+      input.chat_to_responses !== undefined ? (input.chat_to_responses ? 1 : 0) : existing.chat_to_responses
     const isActive = input.is_active !== undefined ? (input.is_active ? 1 : 0) : existing.is_active
 
     db.prepare(
-      `UPDATE providers SET name = ?, type = ?, api_key = ?, base_url = ?, model_id = ?, is_active = ?, updated_at = datetime('now')
+      `UPDATE providers SET name = ?, type = ?, api_key = ?, base_url = ?, model_id = ?, chat_to_responses = ?, is_active = ?, updated_at = datetime('now')
        WHERE id = ?`
-    ).run(name, type, apiKey, baseUrl, modelId, isActive, input.id)
+    ).run(name, type, apiKey, baseUrl, modelId, chatToResponses, isActive, input.id)
     return { success: true }
   })
 
