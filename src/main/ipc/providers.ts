@@ -1,9 +1,9 @@
-import { execFile } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
 import { app, ipcMain } from 'electron'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { CODEX_PROXY_BASE_URL } from '../codexProxy'
+import { CODEX_PROXY_BASE_URL, startCodexProxyServer, stopCodexProxyServer } from '../codexProxy'
 import { getDatabase } from '../database'
 
 export interface Provider {
@@ -49,6 +49,7 @@ const CODEX_PROVIDER_ID_PREFIX = 'coding_helper_'
 const CODEX_MANAGED_BLOCK_START = '# coding-helper codex provider:start'
 const CODEX_MANAGED_BLOCK_END = '# coding-helper codex provider:end'
 const CODEX_CHAT_ONLY_HOSTS = ['api.moonshot.cn', 'api.moonshot.ai']
+const CODEX_PROXY_LAUNCH_AGENT_LABEL = 'com.coding-helper.codex-proxy'
 
 function getClaudeCodeEnvScriptPath(): string {
   const candidates = [
@@ -115,6 +116,15 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
 function getCodexProviderId(provider: Provider): string {
   return `${CODEX_PROVIDER_ID_PREFIX}${provider.id.replace(/[^A-Za-z0-9_]/g, '_')}`
 }
@@ -128,6 +138,91 @@ function cleanupCodexTokenFiles(tokenDir: string, keepFileName?: string): void {
 
     unlinkSync(join(tokenDir, fileName))
   }
+}
+
+function getCodexProxyLaunchAgentPath(): string {
+  return join(homedir(), 'Library', 'LaunchAgents', `${CODEX_PROXY_LAUNCH_AGENT_LABEL}.plist`)
+}
+
+function getCodexProxyDaemonArgs(): string[] {
+  const defaultAppProcess = process as NodeJS.Process & { defaultApp?: boolean }
+  if (defaultAppProcess.defaultApp) {
+    return [process.execPath, app.getAppPath(), '--codex-proxy-daemon']
+  }
+
+  return [process.execPath, '--codex-proxy-daemon']
+}
+
+function writeCodexProxyLaunchAgent(): string {
+  const launchAgentsDir = join(homedir(), 'Library', 'LaunchAgents')
+  const logDir = join(homedir(), '.coding-helper', 'codex', 'logs')
+  const plistPath = getCodexProxyLaunchAgentPath()
+  const argsXml = getCodexProxyDaemonArgs()
+    .map((arg) => `    <string>${xmlEscape(arg)}</string>`)
+    .join('\n')
+
+  mkdirSync(launchAgentsDir, { recursive: true })
+  mkdirSync(logDir, { recursive: true })
+  writeFileSync(
+    plistPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${CODEX_PROXY_LAUNCH_AGENT_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+${argsXml}
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${xmlEscape(join(logDir, 'codex-proxy.out.log'))}</string>
+  <key>StandardErrorPath</key>
+  <string>${xmlEscape(join(logDir, 'codex-proxy.err.log'))}</string>
+</dict>
+</plist>
+`,
+    'utf-8'
+  )
+
+  return plistPath
+}
+
+function launchctlDomain(): string {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 501
+  return `gui/${uid}`
+}
+
+function runLaunchctl(args: string[], allowFailure = false): void {
+  try {
+    execFileSync('launchctl', args, { stdio: 'ignore' })
+  } catch (error) {
+    if (!allowFailure) throw error
+  }
+}
+
+async function installCodexProxyLaunchAgent(): Promise<void> {
+  const plistPath = writeCodexProxyLaunchAgent()
+  const domain = launchctlDomain()
+  await stopCodexProxyServer()
+  try {
+    runLaunchctl(['bootout', domain, plistPath], true)
+    runLaunchctl(['bootstrap', domain, plistPath])
+    runLaunchctl(['kickstart', '-k', `${domain}/${CODEX_PROXY_LAUNCH_AGENT_LABEL}`], true)
+  } catch (error) {
+    startCodexProxyServer()
+    throw error
+  }
+}
+
+function uninstallCodexProxyLaunchAgent(): void {
+  const plistPath = getCodexProxyLaunchAgentPath()
+  runLaunchctl(['bootout', launchctlDomain(), plistPath], true)
+  if (existsSync(plistPath)) unlinkSync(plistPath)
 }
 
 function removeCodexManagedBlock(content: string): string {
@@ -162,7 +257,7 @@ function setTopLevelTomlKeys(content: string, entries: Record<string, string>): 
   return `${header}\n\n${body}`.trimEnd() + '\n'
 }
 
-function configureCodexGlobal(provider: Provider): GlobalConfigurationResult {
+async function configureCodexGlobal(provider: Provider): Promise<GlobalConfigurationResult> {
   if (!provider.api_key) {
     throw new Error('Provider API key is required')
   }
@@ -227,6 +322,11 @@ function configureCodexGlobal(provider: Provider): GlobalConfigurationResult {
   })
 
   writeFileSync(configPath, nextConfig, 'utf-8')
+  if (provider.chat_to_responses) {
+    await installCodexProxyLaunchAgent()
+  } else {
+    uninstallCodexProxyLaunchAgent()
+  }
 
   return {
     success: true,
@@ -279,6 +379,7 @@ function restoreCodexNativeGlobal(): GlobalConfigurationResult {
     writeFileSync(configPath, nextConfig ? `${nextConfig}\n` : '', 'utf-8')
   }
   cleanupCodexTokenFiles(tokenDir)
+  uninstallCodexProxyLaunchAgent()
 
   return {
     success: true,
@@ -362,7 +463,7 @@ export function registerProviderIPC(): void {
     const provider = db.prepare('SELECT * FROM providers WHERE id = ?').get(id) as Provider | undefined
     if (!provider) throw new Error('Provider not found')
 
-    return configureCodexGlobal(provider)
+    return await configureCodexGlobal(provider)
   })
 
   ipcMain.handle('provider:restoreNativeGlobal', async (_, agentId: string) => {

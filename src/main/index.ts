@@ -36,6 +36,12 @@ function createWindow(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.coding-helper')
 
+  if (process.argv.includes('--codex-proxy-daemon')) {
+    initDatabase()
+    startCodexProxyServer()
+    return
+  }
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
