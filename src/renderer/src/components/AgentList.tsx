@@ -53,13 +53,66 @@ function buildInitialAgents(): Agent[] {
 }
 
 export function AgentList(): JSX.Element {
-  const { providers } = useProviders()
-  const [agents, setAgents] = useState<Agent[]>(() => buildInitialAgents())
+  const { providers, loading: providersLoading, error: providersError } = useProviders()
+  const [agents, setAgents] = useState<Agent[]>(DEFAULT_AGENTS)
+  const [agentSelectionsLoading, setAgentSelectionsLoading] = useState(true)
   const [configuringAgentId, setConfiguringAgentId] = useState<string | null>(null)
   const [statusByAgentId, setStatusByAgentId] = useState<Record<string, string>>({})
   const [statusTypeByAgentId, setStatusTypeByAgentId] = useState<Record<string, 'success' | 'info' | 'error'>>({})
 
   useEffect(() => {
+    let cancelled = false
+
+    async function loadAgentSelections(): Promise<void> {
+      try {
+        const dbSelections = await window.api.agent.listProviderSelections()
+        const localSelections = readPersistedProviderSelections()
+        const dbSelectionByAgentId = dbSelections.reduce<Record<string, string>>((result, selection) => {
+          result[selection.agent_id] = selection.provider_id
+          return result
+        }, {})
+
+        const nextAgents = DEFAULT_AGENTS.map((agent) => {
+          const providerId = dbSelectionByAgentId[agent.id] || localSelections[agent.id] || NATIVE_PROVIDER_ID
+          return { ...agent, provider_id: providerId }
+        })
+
+        if (cancelled) return
+        setAgents(nextAgents)
+
+        for (const agent of nextAgents) {
+          if (dbSelectionByAgentId[agent.id] !== agent.provider_id) {
+            await window.api.agent.setProviderSelection({ agent_id: agent.id, provider_id: agent.provider_id })
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAgents(buildInitialAgents())
+          setStatusByAgentId((currentStatus) => ({
+            ...currentStatus,
+            codex: err instanceof Error ? `Agent 配置读取失败：${err.message}` : 'Agent 配置读取失败'
+          }))
+          setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, codex: 'error' }))
+        }
+      } finally {
+        if (!cancelled) {
+          setAgentSelectionsLoading(false)
+        }
+      }
+    }
+
+    void loadAgentSelections()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (agentSelectionsLoading || providersLoading || providersError) {
+      return
+    }
+
     const nextAgents = agents.map((agent) => {
       if (agent.provider_id === NATIVE_PROVIDER_ID) {
         return agent
@@ -72,22 +125,39 @@ export function AgentList(): JSX.Element {
     const hasChanges = nextAgents.some((agent, index) => agent.provider_id !== agents[index]?.provider_id)
     if (hasChanges) {
       setAgents(nextAgents)
+      for (const agent of nextAgents) {
+        if (agent.provider_id !== agents.find((currentAgent) => currentAgent.id === agent.id)?.provider_id) {
+          void window.api.agent.setProviderSelection({ agent_id: agent.id, provider_id: agent.provider_id })
+        }
+      }
     }
-  }, [agents, providers])
+  }, [agentSelectionsLoading, agents, providers, providersError, providersLoading])
 
-  useEffect(() => {
-    const persistedSelections = agents.reduce<Record<string, string>>((result, agent) => {
+  const persistLocalSelections = (nextAgents: Agent[]): void => {
+    const persistedSelections = nextAgents.reduce<Record<string, string>>((result, agent) => {
       result[agent.id] = agent.provider_id
       return result
     }, {})
 
     window.localStorage.setItem(AGENT_PROVIDER_STORAGE_KEY, JSON.stringify(persistedSelections))
-  }, [agents])
+  }
 
-  const updateAgent = (id: string, field: string, value: string): void => {
-    setAgents((currentAgents) => currentAgents.map((a) => (a.id === id ? { ...a, [field]: value } : a)))
+  const updateAgentProvider = async (id: string, value: string): Promise<void> => {
+    const nextAgents = agents.map((agent) => (agent.id === id ? { ...agent, provider_id: value } : agent))
+    setAgents(nextAgents)
+    persistLocalSelections(nextAgents)
     setStatusByAgentId((currentStatus) => ({ ...currentStatus, [id]: '' }))
     setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [id]: 'info' }))
+
+    try {
+      await window.api.agent.setProviderSelection({ agent_id: id, provider_id: value })
+    } catch (err) {
+      setStatusByAgentId((currentStatus) => ({
+        ...currentStatus,
+        [id]: err instanceof Error ? `供应商选择保存失败：${err.message}` : '供应商选择保存失败'
+      }))
+      setStatusTypeByAgentId((currentStatus) => ({ ...currentStatus, [id]: 'error' }))
+    }
   }
 
   const configureGlobal = async (agent: Agent): Promise<void> => {
@@ -190,7 +260,8 @@ export function AgentList(): JSX.Element {
               <div className="agent-card-right">
                 <select
                   value={agent.provider_id}
-                  onChange={(e) => updateAgent(agent.id, 'provider_id', e.target.value)}
+                  disabled={agentSelectionsLoading}
+                  onChange={(e) => void updateAgentProvider(agent.id, e.target.value)}
                 >
                   <option value="" disabled>
                     供应商

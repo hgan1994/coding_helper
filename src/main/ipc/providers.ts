@@ -39,6 +39,12 @@ export interface UpdateProviderInput {
   is_active?: boolean
 }
 
+interface AgentProviderSelection {
+  agent_id: string
+  provider_id: string
+  updated_at: string
+}
+
 interface GlobalConfigurationResult {
   success: boolean
   message: string
@@ -222,6 +228,11 @@ function runLaunchctl(args: string[], allowFailure = false): void {
 }
 
 async function installCodexProxyLaunchAgent(): Promise<void> {
+  if (process.platform !== 'darwin') {
+    startCodexProxyServer()
+    return
+  }
+
   const plistPath = writeCodexProxyLaunchAgent()
   const domain = launchctlDomain()
   await stopCodexProxyServer()
@@ -236,6 +247,10 @@ async function installCodexProxyLaunchAgent(): Promise<void> {
 }
 
 function uninstallCodexProxyLaunchAgent(): void {
+  if (process.platform !== 'darwin') {
+    return
+  }
+
   const plistPath = getCodexProxyLaunchAgentPath()
   runLaunchctl(['bootout', launchctlDomain(), plistPath], true)
   if (existsSync(plistPath)) unlinkSync(plistPath)
@@ -245,6 +260,34 @@ function removeCodexManagedBlock(content: string): string {
   const start = CODEX_MANAGED_BLOCK_START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const end = CODEX_MANAGED_BLOCK_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return content.replace(new RegExp(`\\n?${start}[\\s\\S]*?${end}\\n?`, 'g'), '\n').trimStart()
+}
+
+function isCodexProviderSectionHeader(line: string): boolean {
+  const match = line.trim().match(/^\[([^\]]+)\]$/)
+  if (!match) return false
+
+  const sectionName = match[1].replace(/"/g, '')
+  return sectionName.startsWith(`model_providers.${CODEX_PROVIDER_ID_PREFIX}`)
+}
+
+function removeCodexProviderSections(content: string): string {
+  const lines: string[] = []
+  let skippingCodexProviderSection = false
+
+  for (const line of content.split('\n')) {
+    const isSectionHeader = /^\s*\[[^\]]+\]\s*$/.test(line)
+
+    if (isSectionHeader) {
+      skippingCodexProviderSection = isCodexProviderSectionHeader(line)
+      if (skippingCodexProviderSection) continue
+    }
+
+    if (!skippingCodexProviderSection) {
+      lines.push(line)
+    }
+  }
+
+  return lines.join('\n').trimStart()
 }
 
 function removeTopLevelTomlKeys(content: string, keys: string[]): string {
@@ -315,7 +358,10 @@ async function configureCodexGlobal(provider: Provider): Promise<GlobalConfigura
   cleanupCodexTokenFiles(tokenDir, tokenFileName)
 
   const existingConfig = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : ''
-  const unmanagedConfig = removeTopLevelTomlKeys(removeCodexManagedBlock(existingConfig), ['model', 'model_provider'])
+  const unmanagedConfig = removeTopLevelTomlKeys(removeCodexProviderSections(removeCodexManagedBlock(existingConfig)), [
+    'model',
+    'model_provider'
+  ])
   const codexBaseUrl = provider.chat_to_responses
     ? `${CODEX_PROXY_BASE_URL}/codex/${provider.id}/v1`
     : provider.base_url
@@ -491,5 +537,31 @@ export function registerProviderIPC(): void {
     }
 
     throw new Error('Unsupported agent')
+  })
+
+  ipcMain.handle('agent:listProviderSelections', () => {
+    const db = getDatabase()
+    return db
+      .prepare('SELECT agent_id, provider_id, updated_at FROM agent_provider_configs ORDER BY agent_id ASC')
+      .all() as AgentProviderSelection[]
+  })
+
+  ipcMain.handle('agent:setProviderSelection', (_, input: { agent_id: string; provider_id: string }) => {
+    if (!input.agent_id) {
+      throw new Error('Agent ID is required')
+    }
+
+    if (!input.provider_id) {
+      throw new Error('Provider ID is required')
+    }
+
+    const db = getDatabase()
+    db.prepare(
+      `INSERT INTO agent_provider_configs (agent_id, provider_id)
+       VALUES (?, ?)
+       ON CONFLICT(agent_id) DO UPDATE SET provider_id = excluded.provider_id, updated_at = datetime('now')`
+    ).run(input.agent_id, input.provider_id)
+
+    return { success: true }
   })
 }

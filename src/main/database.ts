@@ -26,6 +26,14 @@ export function initDatabase(): void {
     )
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_provider_configs (
+      agent_id TEXT PRIMARY KEY,
+      provider_id TEXT NOT NULL DEFAULT '__native__',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+
   const columns = db.prepare("PRAGMA table_info(providers)").all() as { name: string }[]
   const hasModelId = columns.some((col) => col.name === 'model_id')
   const hasModels = columns.some((col) => col.name === 'models')

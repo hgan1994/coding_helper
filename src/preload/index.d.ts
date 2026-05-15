@@ -21,6 +21,17 @@ export interface ProviderAPI {
   restoreNativeGlobal(agentId: string): Promise<{ success: boolean; message: string; output: string }>
 }
 
+export interface AgentProviderSelection {
+  agent_id: string
+  provider_id: string
+  updated_at: string
+}
+
+export interface AgentAPI {
+  listProviderSelections(): Promise<AgentProviderSelection[]>
+  setProviderSelection(input: { agent_id: string; provider_id: string }): Promise<{ success: boolean }>
+}
+
 export interface Provider {
   id: string
   name: string
@@ -58,6 +69,7 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      agent: AgentAPI
       provider: ProviderAPI
     }
   }

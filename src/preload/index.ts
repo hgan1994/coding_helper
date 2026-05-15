@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 const api = {
+  agent: {
+    listProviderSelections: () => ipcRenderer.invoke('agent:listProviderSelections'),
+    setProviderSelection: (input: { agent_id: string; provider_id: string }) => ipcRenderer.invoke('agent:setProviderSelection', input)
+  },
   provider: {
     list: () => ipcRenderer.invoke('provider:list'),
     getById: (id: string) => ipcRenderer.invoke('provider:getById', id),
