@@ -122,8 +122,8 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-function windowsCmdQuote(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`
+function powershellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
 }
 
 function tomlStringArray(values: string[]): string {
@@ -132,7 +132,18 @@ function tomlStringArray(values: string[]): string {
 
 function getCodexAuthConfigLines(tokenPath: string): string[] {
   if (process.platform === 'win32') {
-    return ['command = "cmd.exe"', `args = ${tomlStringArray(['/d', '/s', '/c', `type ${windowsCmdQuote(tokenPath)}`])}`]
+    return [
+      'command = "powershell.exe"',
+      `args = ${tomlStringArray([
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `[Console]::Out.Write((Get-Content -Raw -LiteralPath ${powershellSingleQuote(tokenPath)}))`
+      ])}`
+    ]
   }
 
   return ['command = "sh"', `args = ${tomlStringArray(['-c', `cat ${shellSingleQuote(tokenPath)}`])}`]
