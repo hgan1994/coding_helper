@@ -44,7 +44,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps): JSX.Element 
         </button>
       </nav>
       <div className="sidebar-footer">
-        <span className="sidebar-footer-label">推荐目录</span>
+        <span className="sidebar-footer-label">推荐软件</span>
         <button className="sidebar-promo-item" onClick={() => window.open(MCODING_URL, '_blank')}>
           <span className="sidebar-promo-title">mCoding</span>
           <span className="sidebar-promo-desc">手机远程编程助手</span>
