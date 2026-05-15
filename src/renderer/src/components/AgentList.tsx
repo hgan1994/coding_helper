@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useProviders } from '../hooks/useProviders'
 import './AgentList.css'
 
 const NATIVE_PROVIDER_ID = '__native__'
+const AGENT_PROVIDER_STORAGE_KEY = 'coding-helper:agent-provider-selection'
+type AgentProviderType = 'anthropic' | 'openai'
 
 interface AgentConfig {
   id: string
   name: string
   description: string
-  providerType: 'anthropic' | 'openai'
+  providerType: AgentProviderType
 }
 
 const AGENT_CONFIGS: AgentConfig[] = [
@@ -22,12 +24,65 @@ interface Agent extends AgentConfig {
 
 const DEFAULT_AGENTS: Agent[] = AGENT_CONFIGS.map((config) => ({ ...config, provider_id: NATIVE_PROVIDER_ID }))
 
+function readPersistedProviderSelections(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(AGENT_PROVIDER_STORAGE_KEY)
+    if (!raw) return {}
+
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+
+    return Object.entries(parsed).reduce<Record<string, string>>((result, [agentId, providerId]) => {
+      if (typeof providerId === 'string') {
+        result[agentId] = providerId
+      }
+      return result
+    }, {})
+  } catch {
+    return {}
+  }
+}
+
+function buildInitialAgents(): Agent[] {
+  const persistedSelections = readPersistedProviderSelections()
+
+  return DEFAULT_AGENTS.map((agent) => ({
+    ...agent,
+    provider_id: persistedSelections[agent.id] || NATIVE_PROVIDER_ID
+  }))
+}
+
 export function AgentList(): JSX.Element {
   const { providers } = useProviders()
-  const [agents, setAgents] = useState<Agent[]>(DEFAULT_AGENTS)
+  const [agents, setAgents] = useState<Agent[]>(() => buildInitialAgents())
   const [configuringAgentId, setConfiguringAgentId] = useState<string | null>(null)
   const [statusByAgentId, setStatusByAgentId] = useState<Record<string, string>>({})
   const [statusTypeByAgentId, setStatusTypeByAgentId] = useState<Record<string, 'success' | 'info' | 'error'>>({})
+
+  useEffect(() => {
+    const nextAgents = agents.map((agent) => {
+      if (agent.provider_id === NATIVE_PROVIDER_ID) {
+        return agent
+      }
+
+      const matchedProvider = providers.find((provider) => provider.id === agent.provider_id && provider.type === agent.providerType)
+      return matchedProvider ? agent : { ...agent, provider_id: NATIVE_PROVIDER_ID }
+    })
+
+    const hasChanges = nextAgents.some((agent, index) => agent.provider_id !== agents[index]?.provider_id)
+    if (hasChanges) {
+      setAgents(nextAgents)
+    }
+  }, [agents, providers])
+
+  useEffect(() => {
+    const persistedSelections = agents.reduce<Record<string, string>>((result, agent) => {
+      result[agent.id] = agent.provider_id
+      return result
+    }, {})
+
+    window.localStorage.setItem(AGENT_PROVIDER_STORAGE_KEY, JSON.stringify(persistedSelections))
+  }, [agents])
 
   const updateAgent = (id: string, field: string, value: string): void => {
     setAgents((currentAgents) => currentAgents.map((a) => (a.id === id ? { ...a, [field]: value } : a)))

@@ -1,14 +1,14 @@
 .provider-list-page {
-  max-width: 900px;
+  max-width: 820px;
   margin: 0 auto;
-  padding: 48px 32px;
+  padding: 32px 24px;
 }
 
 .provider-list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 
 .provider-list-header h1 {
@@ -27,7 +27,7 @@
 
 .provider-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 

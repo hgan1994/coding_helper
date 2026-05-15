@@ -7,8 +7,10 @@ import { startCodexProxyServer } from './codexProxy'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 980,
+    height: 700,
+    minWidth: 900,
+    minHeight: 620,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
