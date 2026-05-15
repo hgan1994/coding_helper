@@ -17,10 +17,18 @@ export function ProviderList(): JSX.Element {
     model_id: string
     chat_to_responses: number
   }): Promise<void> => {
+    const existingNames = new Set(providers.map((p) => p.name))
+    let copyName: string
+    let i = 1
+    do {
+      copyName = `${provider.name} (${i})`
+      i++
+    } while (existingNames.has(copyName))
+
     const confirmed = window.confirm(`确认复制一份「${provider.name}」的配置？`)
     if (!confirmed) return
     await createProvider({
-      name: provider.name,
+      name: copyName,
       type: provider.type,
       api_key: provider.api_key,
       base_url: provider.base_url,
@@ -74,7 +82,11 @@ export function ProviderList(): JSX.Element {
               key={provider.id}
               provider={provider}
               onEdit={() => { setEditingProviderId(provider.id); setShowForm(true) }}
-              onDelete={() => deleteProvider(provider.id)}
+              onDelete={() => {
+                    if (window.confirm(`确认删除「${provider.name}」？此操作不可恢复。`)) {
+                      void deleteProvider(provider.id)
+                    }
+                  }}
               onCopy={() => handleCopy(provider)}
             />
           ))}
