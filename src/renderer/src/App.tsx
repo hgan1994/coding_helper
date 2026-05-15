@@ -13,12 +13,8 @@ function App(): JSX.Element {
     <div className="app-layout">
       <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
       <main className="app-main">
-        <div className={`app-page ${currentPage === 'providers' ? '' : 'page-hidden'}`}>
-          <ProviderList />
-        </div>
-        <div className={`app-page ${currentPage === 'agents' ? '' : 'page-hidden'}`}>
-          <AgentList />
-        </div>
+        {currentPage === 'providers' && <ProviderList />}
+        {currentPage === 'agents' && <AgentList />}
       </main>
     </div>
   )

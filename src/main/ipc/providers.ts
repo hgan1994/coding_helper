@@ -57,6 +57,54 @@ const CODEX_MANAGED_BLOCK_END = '# coding-helper codex provider:end'
 const CODEX_CHAT_ONLY_HOSTS = ['api.moonshot.cn', 'api.moonshot.ai']
 const CODEX_PROXY_LAUNCH_AGENT_LABEL = 'com.coding-helper.codex-proxy'
 
+function getClaudeSettingsDir(): string {
+  return join(homedir(), '.claude')
+}
+
+function getClaudeSettingsPath(): string {
+  return join(getClaudeSettingsDir(), 'settings.json')
+}
+
+function readClaudeSettings(): Record<string, unknown> {
+  const settingsPath = getClaudeSettingsPath()
+  if (!existsSync(settingsPath)) {
+    return {}
+  }
+  try {
+    return JSON.parse(readFileSync(settingsPath, 'utf-8')) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function writeClaudeSettings(content: Record<string, unknown>): void {
+  const dir = getClaudeSettingsDir()
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(getClaudeSettingsPath(), JSON.stringify(content, null, 2), 'utf-8')
+}
+
+function configureClaudeCodeGlobalWindows(provider: Provider): GlobalConfigurationResult {
+  const settings = readClaudeSettings()
+  const env = { ...((settings.env as Record<string, unknown> | undefined) ?? {}) }
+
+  env.ANTHROPIC_AUTH_TOKEN = provider.api_key
+  if (provider.base_url) {
+    env.ANTHROPIC_BASE_URL = provider.base_url
+  } else {
+    delete env.ANTHROPIC_BASE_URL
+  }
+  env.ANTHROPIC_MODEL = provider.model_id
+
+  settings.env = env
+  writeClaudeSettings(settings)
+
+  return {
+    success: true,
+    message: 'Claude Code global configuration updated',
+    output: ''
+  }
+}
+
 function getClaudeCodeEnvScriptPath(): string {
   const candidates = [
     join(process.cwd(), 'claude_code_env.sh'),
@@ -72,15 +120,7 @@ function getClaudeCodeEnvScriptPath(): string {
   return scriptPath
 }
 
-function configureClaudeCodeGlobal(provider: Provider): Promise<GlobalConfigurationResult> {
-  if (!provider.api_key) {
-    throw new Error('Provider API key is required')
-  }
-
-  if (!provider.model_id) {
-    throw new Error('Provider model ID is required')
-  }
-
+function configureClaudeCodeGlobalMac(provider: Provider): Promise<GlobalConfigurationResult> {
   const scriptPath = getClaudeCodeEnvScriptPath()
 
   return new Promise((resolve, reject) => {
@@ -112,6 +152,22 @@ function configureClaudeCodeGlobal(provider: Provider): Promise<GlobalConfigurat
       }
     )
   })
+}
+
+function configureClaudeCodeGlobal(provider: Provider): GlobalConfigurationResult | Promise<GlobalConfigurationResult> {
+  if (!provider.api_key) {
+    throw new Error('Provider API key is required')
+  }
+
+  if (!provider.model_id) {
+    throw new Error('Provider model ID is required')
+  }
+
+  if (process.platform === 'win32') {
+    return configureClaudeCodeGlobalWindows(provider)
+  }
+
+  return configureClaudeCodeGlobalMac(provider)
 }
 
 function escapeTomlString(value: string): string {
@@ -423,8 +479,10 @@ function restoreClaudeCodeNativeGlobal(): GlobalConfigurationResult {
   delete env.ANTHROPIC_AUTH_TOKEN
   delete env.ANTHROPIC_BASE_URL
   delete env.ANTHROPIC_MODEL
-  delete env.API_TIMEOUT_MS
-  delete env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+  if (process.platform !== 'win32') {
+    delete env.API_TIMEOUT_MS
+    delete env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+  }
 
   if (Object.keys(env).length > 0) {
     content.env = env
