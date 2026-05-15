@@ -116,6 +116,22 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
+function windowsCmdQuote(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function tomlStringArray(values: string[]): string {
+  return `[${values.map((value) => `"${escapeTomlString(value)}"`).join(', ')}]`
+}
+
+function getCodexAuthConfigLines(tokenPath: string): string[] {
+  if (process.platform === 'win32') {
+    return ['command = "cmd.exe"', `args = ${tomlStringArray(['/d', '/s', '/c', `type ${windowsCmdQuote(tokenPath)}`])}`]
+  }
+
+  return ['command = "sh"', `args = ${tomlStringArray(['-c', `cat ${shellSingleQuote(tokenPath)}`])}`]
+}
+
 function xmlEscape(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -300,10 +316,10 @@ async function configureCodexGlobal(provider: Provider): Promise<GlobalConfigura
 
   const existingConfig = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : ''
   const unmanagedConfig = removeTopLevelTomlKeys(removeCodexManagedBlock(existingConfig), ['model', 'model_provider'])
-  const tokenCommand = `cat ${shellSingleQuote(tokenPath)}`
   const codexBaseUrl = provider.chat_to_responses
     ? `${CODEX_PROXY_BASE_URL}/codex/${provider.id}/v1`
     : provider.base_url
+  const authConfigLines = getCodexAuthConfigLines(tokenPath)
   const managedBlock = [
     CODEX_MANAGED_BLOCK_START,
     `[model_providers.${providerId}]`,
@@ -312,8 +328,7 @@ async function configureCodexGlobal(provider: Provider): Promise<GlobalConfigura
     'wire_api = "responses"',
     '',
     `[model_providers.${providerId}.auth]`,
-    'command = "sh"',
-    `args = ["-c", "${escapeTomlString(tokenCommand)}"]`,
+    ...authConfigLines,
     CODEX_MANAGED_BLOCK_END
   ].join('\n')
   const nextConfig = setTopLevelTomlKeys(`${unmanagedConfig.trimEnd()}\n\n${managedBlock}\n`, {
